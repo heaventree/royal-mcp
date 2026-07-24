@@ -2648,7 +2648,7 @@ class Server {
                 if (!current_user_can('manage_options')) {
                     throw new \Exception('You do not have permission to read site options.');
                 }
-                $allowed = ['blogname', 'blogdescription', 'siteurl', 'home', 'admin_email', 'posts_per_page', 'date_format', 'time_format', 'timezone_string'];
+                $allowed = ['blogname', 'blogdescription', 'siteurl', 'home', 'admin_email', 'posts_per_page', 'date_format', 'time_format', 'timezone_string', 'googlesitekit_analytics-4_settings'];
                 $name = sanitize_text_field($args['name']);
                 if (!in_array($name, $allowed)) throw new \Exception('Option not allowed: ' . esc_html($name));
                 return ['name' => $name, 'value' => $this->redact_sensitive_keys(get_option($name))];

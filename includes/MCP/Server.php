@@ -11,6 +11,7 @@ use Royal_MCP\Integrations\Elementor as ElementorIntegration;
 use Royal_MCP\Integrations\ACF as ACFIntegration;
 use Royal_MCP\Integrations\RoyalAIFirewall as RAIFIntegration;
 use Royal_MCP\Integrations\Elementor_Coexistence;
+use Royal_MCP\Integrations\Redirection as RedirectionIntegration;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -695,6 +696,7 @@ class Server {
         $tools = array_merge( $tools, ElementorIntegration::get_tools() );
         $tools = array_merge( $tools, ACFIntegration::get_tools() );
         $tools = array_merge( $tools, RAIFIntegration::get_tools() );
+        $tools = array_merge( $tools, RedirectionIntegration::get_tools() );
 
         // 1.4.37 Candidate 5 — when Elementor's own MCP module is present,
         // prefix our elementor_* tool descriptions with a routing hint so
@@ -3212,6 +3214,9 @@ class Server {
                 }
                 if ( strpos( $name, 'raif_' ) === 0 ) {
                     return RAIFIntegration::execute_tool( $name, $args );
+                }
+                if ( strpos( $name, 'redirection_' ) === 0 ) {
+                    return RedirectionIntegration::execute_tool( $name, $args );
                 }
                 throw new \Exception('Unknown tool: ' . esc_html($name));
         }

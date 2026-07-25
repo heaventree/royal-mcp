@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.40
+Stable tag: 1.4.41
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -323,6 +323,9 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 6. OAuth consent screen for Claude Desktop connector
 
 == Changelog ==
+
+= 1.4.41 =
+* Fix: OAuth access-token lifetime raised from 1 hour to 24 hours so long-running MCP sessions (claude.ai remote sessions, agent runs) no longer silently disconnect at the 60-minute mark. New `royal_mcp_access_token_ttl` filter lets site owners tune the lifetime.
 
 = 1.4.40 =
 * Feature: Lean tool profile — append `?tools=core` to the MCP endpoint URL to expose only the core WordPress tools and skip all integration tools, keeping the tools/list payload small for MCP clients that fail on large tool sets.

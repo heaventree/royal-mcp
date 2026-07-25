@@ -14,9 +14,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Token_Store {
 
     /** Token lifetimes in seconds. */
-    const ACCESS_TOKEN_TTL  = 3600;       // 1 hour
+    const ACCESS_TOKEN_TTL  = 86400;      // 24 hours
     const REFRESH_TOKEN_TTL = 2592000;    // 30 days
     const AUTH_CODE_TTL     = 600;        // 10 minutes
+
+    /**
+     * Access-token lifetime in seconds.
+     *
+     * Long-running MCP clients (claude.ai remote sessions, agent runs) hold a
+     * session past the old 1-hour expiry and cannot re-run the interactive
+     * OAuth flow mid-session, so the connection silently dropped at the
+     * 60-minute mark. Site owners who prefer shorter-lived tokens can lower
+     * this via the royal_mcp_access_token_ttl filter.
+     */
+    public static function access_token_ttl() {
+        $ttl = (int) apply_filters( 'royal_mcp_access_token_ttl', self::ACCESS_TOKEN_TTL );
+        return $ttl > 0 ? $ttl : self::ACCESS_TOKEN_TTL;
+    }
 
     /* ------------------------------------------------------------------
      *  Table helpers
@@ -225,13 +239,13 @@ class Token_Store {
         $access_token  = bin2hex( random_bytes( 32 ) );
         $refresh_token = bin2hex( random_bytes( 32 ) );
 
-        self::store_token( $access_token, 'access', $client_id, $user_id, $scope, self::ACCESS_TOKEN_TTL );
+        self::store_token( $access_token, 'access', $client_id, $user_id, $scope, self::access_token_ttl() );
         self::store_token( $refresh_token, 'refresh', $client_id, $user_id, $scope, self::REFRESH_TOKEN_TTL );
 
         return [
             'access_token'  => $access_token,
             'token_type'    => 'Bearer',
-            'expires_in'    => self::ACCESS_TOKEN_TTL,
+            'expires_in'    => self::access_token_ttl(),
             'refresh_token' => $refresh_token,
             'scope'         => $scope,
         ];

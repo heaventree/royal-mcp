@@ -686,6 +686,15 @@ class Server {
             ['name' => 'wp_restore_revision', 'description' => 'Restore a post to a specific revision. The current post content becomes the previous revision (so it can still be reverted again). Requires edit_post capability on the parent post.', 'inputSchema' => ['type' => 'object', 'properties' => ['revision_id' => ['type' => 'integer']], 'required' => ['revision_id']]],
         ];
 
+        // Lean tool profile — append ?tools=core to the MCP URL to expose only
+        // the core WordPress tools and skip every integration. Keeps the
+        // tools/list payload small for MCP clients that choke on large tool
+        // sets (e.g. "Couldn't reload tools from the server" in Claude Desktop).
+        $profile = isset($_GET['tools']) ? sanitize_key(wp_unslash($_GET['tools'])) : '';
+        if ('core' === $profile) {
+            return apply_filters('royal_mcp_tools', $tools, $profile);
+        }
+
         // Conditionally add integration tools
         $tools = array_merge( $tools, WooIntegration::get_tools() );
         $tools = array_merge( $tools, GPIntegration::get_tools() );
@@ -704,7 +713,13 @@ class Server {
         // to our tools; opt-in defer only.
         $tools = Elementor_Coexistence::filter_elementor_tool_descriptions( $tools );
 
-        return $tools;
+        /**
+         * Filter the final MCP tool list before it is returned to the client.
+         *
+         * @param array  $tools   Tool definitions (name, description, inputSchema).
+         * @param string $profile Requested tool profile ('' = full, 'core' = lean).
+         */
+        return apply_filters('royal_mcp_tools', $tools, $profile);
     }
 
     /**

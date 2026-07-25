@@ -12,6 +12,7 @@ use Royal_MCP\Integrations\ACF as ACFIntegration;
 use Royal_MCP\Integrations\RoyalAIFirewall as RAIFIntegration;
 use Royal_MCP\Integrations\Elementor_Coexistence;
 use Royal_MCP\Integrations\Redirection as RedirectionIntegration;
+use Royal_MCP\Integrations\SEOPress as SEOPressIntegration;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -619,7 +620,7 @@ class Server {
 
             // Term Meta (for SEO-plugin tag/category meta — Yoast, Rank Math, AIOSEO)
             ['name' => 'wp_get_term_meta', 'description' => 'Get term meta data. Useful for reading tag/category SEO meta stored by Yoast, Rank Math, or AIOSEO before editing it.', 'inputSchema' => ['type' => 'object', 'properties' => ['term_id' => ['type' => 'integer'], 'key' => ['type' => 'string', 'description' => 'Specific meta key. Omit to return all meta for the term.']], 'required' => ['term_id']]],
-            ['name' => 'wp_update_term_meta', 'description' => 'Update term meta data. Common keys for SEO plugins: Yoast uses _yoast_wpseo_title / _yoast_wpseo_metadesc; Rank Math uses rank_math_title / rank_math_description; AIOSEO uses _aioseo_title / _aioseo_description. String values may contain safe HTML (same allow-list as post content). Use the royal_mcp_meta_value_sanitizer filter to customize per meta key.', 'inputSchema' => ['type' => 'object', 'properties' => ['term_id' => ['type' => 'integer'], 'key' => ['type' => 'string'], 'value' => ['oneOf' => [['type' => 'string'], ['type' => 'integer'], ['type' => 'number'], ['type' => 'boolean'], ['type' => 'array'], ['type' => 'object']]]], 'required' => ['term_id', 'key', 'value']]],
+            ['name' => 'wp_update_term_meta', 'description' => 'Update term meta data. Common keys for SEO plugins: Yoast uses _yoast_wpseo_title / _yoast_wpseo_metadesc; Rank Math uses rank_math_title / rank_math_description; AIOSEO uses _aioseo_title / _aioseo_description; SEOPress uses the same keys as its post meta (_seopress_titles_title, _seopress_titles_desc, _seopress_robots_index) stored as term meta. String values may contain safe HTML (same allow-list as post content). Use the royal_mcp_meta_value_sanitizer filter to customize per meta key.', 'inputSchema' => ['type' => 'object', 'properties' => ['term_id' => ['type' => 'integer'], 'key' => ['type' => 'string'], 'value' => ['oneOf' => [['type' => 'string'], ['type' => 'integer'], ['type' => 'number'], ['type' => 'boolean'], ['type' => 'array'], ['type' => 'object']]]], 'required' => ['term_id', 'key', 'value']]],
             ['name' => 'wp_delete_term_meta', 'description' => 'Delete term meta data', 'inputSchema' => ['type' => 'object', 'properties' => ['term_id' => ['type' => 'integer'], 'key' => ['type' => 'string']], 'required' => ['term_id', 'key']]],
 
             // Comments
@@ -674,8 +675,8 @@ class Server {
             ['name' => 'wp_update_custom_css', 'description' => 'Update the active theme\'s custom CSS. CSS is filtered through wp_kses (script tags stripped). Requires the "Allow AI to modify theme appearance" admin toggle and unfiltered_html capability.', 'inputSchema' => ['type' => 'object', 'properties' => ['css' => ['type' => 'string'], 'theme_slug' => ['type' => 'string', 'description' => 'Theme slug (defaults to active theme)']], 'required' => ['css']]],
 
             // SEO Meta (auto-detects Yoast SEO or Rank Math)
-            ['name' => 'wp_get_seo_meta', 'description' => 'Get the SEO meta fields for a post (title, description, focus keyword, robots, OG/Twitter overrides, URL slug). Auto-detects Yoast SEO or Rank Math — returns the active plugin\'s fields plus the post slug (which is a WordPress-native field, returned regardless of SEO plugin).', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer']], 'required' => ['post_id']]],
-            ['name' => 'wp_update_seo_meta', 'description' => 'Update SEO meta fields on a post. Auto-routes title/description/focus_keyword/noindex/og_* to Yoast or Rank Math based on which is active. The slug field is a WordPress-native field and works regardless of SEO plugin (corresponds to the URL slug shown in Yoast\'s and Rank Math\'s UI editors). Requires edit_post capability on the target post.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer'], 'title' => ['type' => 'string', 'description' => 'SEO title (replaces the meta title used in browser tabs and SERPs)'], 'description' => ['type' => 'string', 'description' => 'SEO meta description (used in SERPs)'], 'focus_keyword' => ['type' => 'string', 'description' => 'Primary focus keyword for SEO scoring'], 'noindex' => ['type' => 'boolean', 'description' => 'Tell search engines not to index this URL'], 'og_title' => ['type' => 'string', 'description' => 'Open Graph title (Facebook / Slack / LinkedIn previews)'], 'og_description' => ['type' => 'string', 'description' => 'Open Graph description'], 'slug' => ['type' => 'string', 'description' => 'URL slug (post_name). WordPress will sanitize and ensure uniqueness; the actually-saved value is returned in the response so the caller can confirm.']], 'required' => ['post_id']]],
+            ['name' => 'wp_get_seo_meta', 'description' => 'Get the SEO meta fields for a post (title, description, focus keyword, robots, OG/Twitter overrides, URL slug). Auto-detects Yoast SEO, Rank Math, or SEOPress — returns the active plugin\'s fields plus the post slug (which is a WordPress-native field, returned regardless of SEO plugin). SEOPress responses also include nofollow and canonical.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer']], 'required' => ['post_id']]],
+            ['name' => 'wp_update_seo_meta', 'description' => 'Update SEO meta fields on a post. Auto-routes title/description/focus_keyword/noindex/og_* to Yoast, Rank Math, or SEOPress based on which is active. The slug field is a WordPress-native field and works regardless of SEO plugin (corresponds to the URL slug shown in Yoast\'s and Rank Math\'s UI editors). Requires edit_post capability on the target post.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer'], 'title' => ['type' => 'string', 'description' => 'SEO title (replaces the meta title used in browser tabs and SERPs)'], 'description' => ['type' => 'string', 'description' => 'SEO meta description (used in SERPs)'], 'focus_keyword' => ['type' => 'string', 'description' => 'Primary focus keyword for SEO scoring'], 'noindex' => ['type' => 'boolean', 'description' => 'Tell search engines not to index this URL'], 'og_title' => ['type' => 'string', 'description' => 'Open Graph title (Facebook / Slack / LinkedIn previews)'], 'og_description' => ['type' => 'string', 'description' => 'Open Graph description'], 'slug' => ['type' => 'string', 'description' => 'URL slug (post_name). WordPress will sanitize and ensure uniqueness; the actually-saved value is returned in the response so the caller can confirm.']], 'required' => ['post_id']]],
 
             // Permalink Structure
             ['name' => 'wp_get_permalink_structure', 'description' => 'Get the WordPress permalink structure (e.g. /%postname%/, /%year%/%monthnum%/%postname%/). Read-only.', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]],
@@ -694,6 +695,14 @@ class Server {
         if ('core' === $profile) {
             return apply_filters('royal_mcp_tools', $tools, $profile);
         }
+        // ?tools=seopress — core tools plus the SEOPress integration only.
+        // Same motivation as ?tools=core: keeps the tools/list payload small
+        // for clients that fail on large tool sets, while still exposing the
+        // SEOPress-specific surfaces (redirections, schemas, internal REST).
+        if ('seopress' === $profile) {
+            $tools = array_merge( $tools, SEOPressIntegration::get_tools() );
+            return apply_filters('royal_mcp_tools', $tools, $profile);
+        }
 
         // Conditionally add integration tools
         $tools = array_merge( $tools, WooIntegration::get_tools() );
@@ -706,6 +715,7 @@ class Server {
         $tools = array_merge( $tools, ACFIntegration::get_tools() );
         $tools = array_merge( $tools, RAIFIntegration::get_tools() );
         $tools = array_merge( $tools, RedirectionIntegration::get_tools() );
+        $tools = array_merge( $tools, SEOPressIntegration::get_tools() );
 
         // 1.4.37 Candidate 5 — when Elementor's own MCP module is present,
         // prefix our elementor_* tool descriptions with a routing hint so
@@ -3020,11 +3030,29 @@ class Server {
                         'slug'           => $slug,
                     ];
                 }
+                if ($detected === 'seopress') {
+                    // SEOPress robots semantics: meta value "yes" means the
+                    // directive is ON (noindex / nofollow); absent means default
+                    // (indexable). There is no "no" state stored.
+                    return [
+                        'plugin'         => defined('SEOPRESS_PRO_VERSION') ? 'seopress-pro' : 'seopress',
+                        'post_id'        => $post_id,
+                        'title'          => (string) get_post_meta($post_id, '_seopress_titles_title', true),
+                        'description'    => (string) get_post_meta($post_id, '_seopress_titles_desc', true),
+                        'focus_keyword'  => (string) get_post_meta($post_id, '_seopress_analysis_target_kw', true),
+                        'noindex'        => get_post_meta($post_id, '_seopress_robots_index', true) === 'yes',
+                        'nofollow'       => get_post_meta($post_id, '_seopress_robots_follow', true) === 'yes',
+                        'canonical'      => (string) get_post_meta($post_id, '_seopress_robots_canonical', true),
+                        'og_title'       => (string) get_post_meta($post_id, '_seopress_social_fb_title', true),
+                        'og_description' => (string) get_post_meta($post_id, '_seopress_social_fb_desc', true),
+                        'slug'           => $slug,
+                    ];
+                }
                 return [
                     'plugin'  => 'none',
                     'post_id' => $post_id,
                     'slug'    => $slug,
-                    'note'    => 'No SEO plugin (Yoast SEO or Rank Math) detected on this site. The slug field is still returned because it is a WordPress-native field.',
+                    'note'    => 'No SEO plugin (Yoast SEO, Rank Math, or SEOPress) detected on this site. The slug field is still returned because it is a WordPress-native field.',
                 ];
 
             case 'wp_update_seo_meta':
@@ -3046,25 +3074,34 @@ class Server {
                     if (array_key_exists($k, $args)) { $wants_seo_field = true; break; }
                 }
                 if ($wants_seo_field && $detected === 'none') {
-                    throw new \Exception('No SEO plugin (Yoast SEO or Rank Math) is active. Install one first, or pass only the slug field (which is WordPress-native and works without an SEO plugin).');
+                    throw new \Exception('No SEO plugin (Yoast SEO, Rank Math, or SEOPress) is active. Install one first, or pass only the slug field (which is WordPress-native and works without an SEO plugin).');
                 }
                 $updated = [];
                 if ($detected !== 'none') {
-                    $field_map = $detected === 'yoast'
-                        ? [
+                    $field_maps = [
+                        'yoast' => [
                             'title'          => '_yoast_wpseo_title',
                             'description'    => '_yoast_wpseo_metadesc',
                             'focus_keyword'  => '_yoast_wpseo_focuskw',
                             'og_title'       => '_yoast_wpseo_opengraph-title',
                             'og_description' => '_yoast_wpseo_opengraph-description',
-                        ]
-                        : [
+                        ],
+                        'rankmath' => [
                             'title'          => 'rank_math_title',
                             'description'    => 'rank_math_description',
                             'focus_keyword'  => 'rank_math_focus_keyword',
                             'og_title'       => 'rank_math_facebook_title',
                             'og_description' => 'rank_math_facebook_description',
-                        ];
+                        ],
+                        'seopress' => [
+                            'title'          => '_seopress_titles_title',
+                            'description'    => '_seopress_titles_desc',
+                            'focus_keyword'  => '_seopress_analysis_target_kw',
+                            'og_title'       => '_seopress_social_fb_title',
+                            'og_description' => '_seopress_social_fb_desc',
+                        ],
+                    ];
+                    $field_map = $field_maps[$detected];
                     foreach ($field_map as $arg_key => $meta_key) {
                         if (array_key_exists($arg_key, $args)) {
                             $value = sanitize_text_field((string) $args[$arg_key]);
@@ -3077,6 +3114,15 @@ class Server {
                         if ($detected === 'yoast') {
                             update_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', $noindex ? '1' : '0');
                             $updated['noindex'] = get_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', true) === '1';
+                        } elseif ($detected === 'seopress') {
+                            // SEOPress stores "yes" for noindex-ON; the indexable
+                            // state is the absence of the meta row, not "no".
+                            if ($noindex) {
+                                update_post_meta($post_id, '_seopress_robots_index', 'yes');
+                            } else {
+                                delete_post_meta($post_id, '_seopress_robots_index');
+                            }
+                            $updated['noindex'] = get_post_meta($post_id, '_seopress_robots_index', true) === 'yes';
                         } else {
                             $robots = get_post_meta($post_id, 'rank_math_robots', true);
                             $robots = is_array($robots) ? $robots : [];
@@ -3233,6 +3279,9 @@ class Server {
                 if ( strpos( $name, 'redirection_' ) === 0 ) {
                     return RedirectionIntegration::execute_tool( $name, $args );
                 }
+                if ( strpos( $name, 'seopress_' ) === 0 ) {
+                    return SEOPressIntegration::execute_tool( $name, $args );
+                }
                 throw new \Exception('Unknown tool: ' . esc_html($name));
         }
     }
@@ -3319,6 +3368,9 @@ class Server {
         }
         if ( defined( 'RANK_MATH_VERSION' ) || class_exists( 'RankMath' ) ) {
             return 'rankmath';
+        }
+        if ( defined( 'SEOPRESS_VERSION' ) || function_exists( 'seopress_init' ) ) {
+            return 'seopress';
         }
         return 'none';
     }
@@ -3567,7 +3619,7 @@ class Server {
             'apikey', 'api_key', 'accesskey', 'access_key',
             'private_key', 'public_key',
             'client_secret', 'client_id', 'auth_key', 'auth_token',
-            'bearer', 'license_key', 'consumer_secret', 'consumer_key',
+            'bearer', 'license', 'licence', 'consumer_secret', 'consumer_key',
             'webhook_secret', 'session_key', 'credentials',
         ];
         $key_lc = strtolower($key);

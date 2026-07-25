@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.41
+Stable tag: 1.4.42
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -323,6 +323,12 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 6. OAuth consent screen for Claude Desktop connector
 
 == Changelog ==
+
+= 1.4.42 =
+* Feature: SEOPress support in wp_get_seo_meta / wp_update_seo_meta — auto-detects SEOPress (free and PRO) alongside Yoast and Rank Math, mapping title, description, focus keyword, noindex, and OG fields to the _seopress_* meta keys. SEOPress reads also return nofollow and canonical.
+* Feature: New SEOPress integration (4 tools) — seopress_get_redirections, seopress_get_schemas (PRO), seopress_list_rest_routes, and seopress_call_rest (invoke SEOPress's own REST surface internally: site audit, AI metadata generation, alerts — no Application Password needed).
+* Feature: New `?tools=seopress` endpoint profile — core tools plus the SEOPress integration only, keeping the tools/list payload small.
+* Security: sensitive-key redaction now also matches `license` / `licence` key names (previously a plugin license key could be returned unredacted by wp_get_plugin_settings).
 
 = 1.4.41 =
 * Fix: OAuth access-token lifetime raised from 1 hour to 24 hours so long-running MCP sessions (claude.ai remote sessions, agent runs) no longer silently disconnect at the 60-minute mark. New `royal_mcp_access_token_ttl` filter lets site owners tune the lifetime.

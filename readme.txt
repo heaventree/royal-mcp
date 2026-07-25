@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.39
+Stable tag: 1.4.40
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -324,7 +324,7 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 
 == Changelog ==
 
-= 1.4.39 =
+= 1.4.40 =
 * Feature: Lean tool profile — append `?tools=core` to the MCP endpoint URL to expose only the core WordPress tools and skip all integration tools, keeping the tools/list payload small for MCP clients that fail on large tool sets.
 * Feature: New `royal_mcp_tools` filter lets site owners trim or extend the final MCP tool list without patching the plugin.
 

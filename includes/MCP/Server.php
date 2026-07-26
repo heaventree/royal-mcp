@@ -675,6 +675,7 @@ class Server {
             ['name' => 'wp_update_custom_css', 'description' => 'Update the active theme\'s custom CSS. CSS is filtered through wp_kses (script tags stripped). Requires the "Allow AI to modify theme appearance" admin toggle and unfiltered_html capability.', 'inputSchema' => ['type' => 'object', 'properties' => ['css' => ['type' => 'string'], 'theme_slug' => ['type' => 'string', 'description' => 'Theme slug (defaults to active theme)']], 'required' => ['css']]],
 
             // SEO Meta (auto-detects Yoast SEO or Rank Math)
+            ['name' => 'wp_audit_seo_bulk', 'description' => 'Bulk on-page SEO scan across many posts/pages in one call — built for full-site sweeps (skills, agents) that would otherwise need one wp_get_seo_meta call per page. For each item returns: SEO title/description (+ char lengths), noindex, H1 count, word count, image count, images missing alt text, and whether it has a featured image. Auto-detects Yoast SEO, Rank Math, or SEOPress for the title/description/noindex fields (see wp_get_seo_meta). Paginated — call again with an incremented page to sweep the whole site.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_type' => ['type' => 'string', 'description' => 'Post type slug (default: post). Use wp_get_post_types to discover available types, or "page" for pages.'], 'status' => ['type' => 'string', 'description' => 'Post status filter (default: publish)'], 'per_page' => ['type' => 'integer', 'description' => 'Items per page (default 50, max 200)'], 'page' => ['type' => 'integer', 'description' => 'Page number, 1-indexed (default 1)']]]],
             ['name' => 'wp_get_seo_meta', 'description' => 'Get the SEO meta fields for a post (title, description, focus keyword, robots, OG/Twitter overrides, URL slug). Auto-detects Yoast SEO, Rank Math, or SEOPress — returns the active plugin\'s fields plus the post slug (which is a WordPress-native field, returned regardless of SEO plugin). SEOPress responses also include nofollow and canonical.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer']], 'required' => ['post_id']]],
             ['name' => 'wp_update_seo_meta', 'description' => 'Update SEO meta fields on a post. Auto-routes title/description/focus_keyword/noindex/og_* to Yoast, Rank Math, or SEOPress based on which is active. The slug field is a WordPress-native field and works regardless of SEO plugin (corresponds to the URL slug shown in Yoast\'s and Rank Math\'s UI editors). Requires edit_post capability on the target post.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer'], 'title' => ['type' => 'string', 'description' => 'SEO title (replaces the meta title used in browser tabs and SERPs)'], 'description' => ['type' => 'string', 'description' => 'SEO meta description (used in SERPs)'], 'focus_keyword' => ['type' => 'string', 'description' => 'Primary focus keyword for SEO scoring'], 'noindex' => ['type' => 'boolean', 'description' => 'Tell search engines not to index this URL'], 'og_title' => ['type' => 'string', 'description' => 'Open Graph title (Facebook / Slack / LinkedIn previews)'], 'og_description' => ['type' => 'string', 'description' => 'Open Graph description'], 'slug' => ['type' => 'string', 'description' => 'URL slug (post_name). WordPress will sanitize and ensure uniqueness; the actually-saved value is returned in the response so the caller can confirm.']], 'required' => ['post_id']]],
 
@@ -2989,6 +2990,89 @@ class Server {
                 ];
 
             // ==================== SEO META (Yoast / Rank Math auto-detect) ====================
+            case 'wp_audit_seo_bulk':
+                if (!current_user_can('read')) {
+                    throw new \Exception('You do not have permission to audit content.');
+                }
+                $audit_post_type = sanitize_key($args['post_type'] ?? 'post');
+                $audit_status    = sanitize_key($args['status'] ?? 'publish');
+                $audit_per_page  = min(200, max(1, intval($args['per_page'] ?? 50)));
+                $audit_page      = max(1, intval($args['page'] ?? 1));
+                $audit_detected  = $this->detect_seo_plugin();
+
+                $audit_query = new \WP_Query([
+                    'post_type'      => $audit_post_type,
+                    'post_status'    => $audit_status,
+                    'posts_per_page' => $audit_per_page,
+                    'paged'          => $audit_page,
+                    'orderby'        => 'ID',
+                    'order'          => 'ASC',
+                    'no_found_rows'  => false,
+                ]);
+
+                $audit_items = [];
+                foreach ($audit_query->posts as $p) {
+                    // Minimal SEO-title/description/noindex read, mirroring
+                    // wp_get_seo_meta's per-plugin field map but trimmed to
+                    // what a bulk sweep needs (no OG/canonical/focus keyword —
+                    // callers wanting those fields fetch a single post via
+                    // wp_get_seo_meta after the bulk pass flags it).
+                    $seo_title = ''; $seo_desc = ''; $noindex = false;
+                    if ($audit_detected === 'yoast') {
+                        $seo_title = (string) get_post_meta($p->ID, '_yoast_wpseo_title', true);
+                        $seo_desc  = (string) get_post_meta($p->ID, '_yoast_wpseo_metadesc', true);
+                        $noindex   = get_post_meta($p->ID, '_yoast_wpseo_meta-robots-noindex', true) === '1';
+                    } elseif ($audit_detected === 'rankmath') {
+                        $seo_title = (string) get_post_meta($p->ID, 'rank_math_title', true);
+                        $seo_desc  = (string) get_post_meta($p->ID, 'rank_math_description', true);
+                        $noindex   = in_array('noindex', (array) get_post_meta($p->ID, 'rank_math_robots', true), true);
+                    } elseif ($audit_detected === 'seopress') {
+                        $seo_title = (string) get_post_meta($p->ID, '_seopress_titles_title', true);
+                        $seo_desc  = (string) get_post_meta($p->ID, '_seopress_titles_desc', true);
+                        $noindex   = get_post_meta($p->ID, '_seopress_robots_index', true) === 'yes';
+                    }
+
+                    $content = (string) $p->post_content;
+                    $h1_count = preg_match_all('/<h1[\s>]/i', $content);
+                    $word_count = str_word_count(wp_strip_all_tags($content));
+
+                    preg_match_all('/<img\b[^>]*>/i', $content, $img_matches);
+                    $images_total = count($img_matches[0]);
+                    $images_missing_alt = 0;
+                    foreach ($img_matches[0] as $img_tag) {
+                        if (!preg_match('/\balt\s*=\s*["\'][^"\']+["\']/i', $img_tag)) {
+                            $images_missing_alt++;
+                        }
+                    }
+
+                    $audit_items[] = [
+                        'id'                  => $p->ID,
+                        'url'                 => get_permalink($p),
+                        'title'               => $p->post_title,
+                        'seo_title'           => $seo_title,
+                        'seo_title_length'    => strlen($seo_title),
+                        'seo_description'     => $seo_desc,
+                        'seo_description_length' => strlen($seo_desc),
+                        'noindex'             => $noindex,
+                        'h1_count'            => (int) $h1_count,
+                        'word_count'          => $word_count,
+                        'images_total'        => $images_total,
+                        'images_missing_alt'  => $images_missing_alt,
+                        'has_featured_image'  => has_post_thumbnail($p->ID),
+                    ];
+                }
+
+                return [
+                    'plugin'      => $audit_detected,
+                    'post_type'   => $audit_post_type,
+                    'status'      => $audit_status,
+                    'page'        => $audit_page,
+                    'per_page'    => $audit_per_page,
+                    'total_items' => (int) $audit_query->found_posts,
+                    'total_pages' => (int) $audit_query->max_num_pages,
+                    'items'       => $audit_items,
+                ];
+
             case 'wp_get_seo_meta':
                 $post_id = self::resolve_post_id_arg($args);
                 if ($post_id <= 0) throw new \Exception('post_id (or id) is required.');

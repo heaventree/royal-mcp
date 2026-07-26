@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.42
+Stable tag: 1.4.43
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -323,6 +323,9 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 6. OAuth consent screen for Claude Desktop connector
 
 == Changelog ==
+
+= 1.4.43 =
+* Feature: New wp_audit_seo_bulk tool — scans many posts/pages in one call (SEO title/description + lengths, noindex, H1 count, word count, image alt-text coverage, featured image) instead of one wp_get_seo_meta round-trip per page. Built for full-site sweeps from skills/agents. Paginated; auto-detects Yoast SEO, Rank Math, or SEOPress.
 
 = 1.4.42 =
 * Feature: SEOPress support in wp_get_seo_meta / wp_update_seo_meta — auto-detects SEOPress (free and PRO) alongside Yoast and Rank Math, mapping title, description, focus keyword, noindex, and OG fields to the _seopress_* meta keys. SEOPress reads also return nofollow and canonical.

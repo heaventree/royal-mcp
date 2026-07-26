@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.43
+Stable tag: 1.4.44
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -323,6 +323,9 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 6. OAuth consent screen for Claude Desktop connector
 
 == Changelog ==
+
+= 1.4.44 =
+* Feature: Widget access — wp_get_widgets (list widget instances, optionally filtered by sidebar), wp_get_sidebars (list widget areas and which widgets live in each), and wp_update_widget (edit a widget's content — classic or block-based). Dispatched internally via WordPress core's own /wp/v2/widgets and /wp/v2/sidebars REST controllers, so both legacy and block widgets are handled uniformly. Reads require edit_theme_options; writes additionally require the "Allow AI to modify theme appearance" admin toggle (same gate as wp_update_theme_mod / wp_update_custom_css).
 
 = 1.4.43 =
 * Feature: New wp_audit_seo_bulk tool — scans many posts/pages in one call (SEO title/description + lengths, noindex, H1 count, word count, image alt-text coverage, featured image) instead of one wp_get_seo_meta round-trip per page. Built for full-site sweeps from skills/agents. Paginated; auto-detects Yoast SEO, Rank Math, or SEOPress.

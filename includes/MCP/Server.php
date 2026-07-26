@@ -671,6 +671,9 @@ class Server {
             ['name' => 'wp_get_active_theme', 'description' => 'Get the active theme with name, version, parent (if child theme), and screenshot URL', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]],
             ['name' => 'wp_get_theme_mods', 'description' => 'Get all customizer settings (theme_mods) for the active theme', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]],
             ['name' => 'wp_update_theme_mod', 'description' => 'Update a single theme customizer setting. Requires the "Allow AI to modify theme appearance" admin toggle AND the mod name must be in the allowlist (extend via the royal_mcp_writable_theme_mods filter).', 'inputSchema' => ['type' => 'object', 'properties' => ['mod_name' => ['type' => 'string'], 'value' => ['description' => 'New value (any JSON type compatible with set_theme_mod)']], 'required' => ['mod_name', 'value']]],
+            ['name' => 'wp_get_widgets', 'description' => 'List widget instances (footer columns, sidebars) via WordPress core\'s native widgets REST controller — covers both classic widgets (Text, Custom HTML, etc.) and block-based widgets. Each item includes id, id_base, sidebar (widget area slug), the raw instance/content fields, and rendered HTML. Use wp_get_sidebars first to discover sidebar slugs and which widget IDs live in each. Requires edit_theme_options capability.', 'inputSchema' => ['type' => 'object', 'properties' => ['sidebar' => ['type' => 'string', 'description' => 'Optional widget-area (sidebar) slug to filter to, e.g. "footer-1". Omit to list every widget on the site.']]]],
+            ['name' => 'wp_get_sidebars', 'description' => 'List registered widget areas (sidebars, footer columns, etc.) with their slug, name, description, and the ordered list of widget IDs currently assigned to each. Use this to find the right sidebar slug and widget ID before calling wp_update_widget. Requires edit_theme_options capability.', 'inputSchema' => ['type' => 'object', 'properties' => new \stdClass()]],
+            ['name' => 'wp_update_widget', 'description' => 'Update a widget instance\'s content (e.g. fix HTML/text in a footer widget, update a Custom HTML widget). Accepts either instance (object — field values for classic widgets, matching what wp_get_widgets returned) or content (string — raw HTML for block-based widgets). Requires edit_theme_options capability plus the "Allow AI to modify theme appearance" admin toggle (same gate as wp_update_theme_mod / wp_update_custom_css), since widgets render site-wide.', 'inputSchema' => ['type' => 'object', 'properties' => ['id' => ['type' => 'string', 'description' => 'Widget instance ID as returned by wp_get_widgets, e.g. "text-2" or a block-widget UUID.'], 'instance' => ['type' => 'object', 'description' => 'Field values for a classic widget (e.g. {"title": "...", "text": "..."} for a Text widget). Merged with the widget\'s existing instance data — only the fields you pass are changed.'], 'content' => ['type' => 'string', 'description' => 'Raw HTML content for a block-based widget (widget_block post type).']], 'required' => ['id']]],
             ['name' => 'wp_get_custom_css', 'description' => 'Get the active theme\'s custom CSS', 'inputSchema' => ['type' => 'object', 'properties' => ['theme_slug' => ['type' => 'string', 'description' => 'Theme slug (defaults to active theme)']]]],
             ['name' => 'wp_update_custom_css', 'description' => 'Update the active theme\'s custom CSS. CSS is filtered through wp_kses (script tags stripped). Requires the "Allow AI to modify theme appearance" admin toggle and unfiltered_html capability.', 'inputSchema' => ['type' => 'object', 'properties' => ['css' => ['type' => 'string'], 'theme_slug' => ['type' => 'string', 'description' => 'Theme slug (defaults to active theme)']], 'required' => ['css']]],
 
@@ -2955,6 +2958,66 @@ class Server {
                     'previous_value' => $previous,
                     'new_value'      => get_theme_mod($mod_name),
                 ];
+
+            // ==================== WIDGETS (core /wp/v2/widgets REST controller) ====================
+            // Dispatched internally via rest_do_request() rather than reimplementing
+            // classic-vs-block widget storage: core's controller already normalizes
+            // both (legacy sidebars_widgets option + widget_block CPT) into one
+            // shape, and its own permission_callback enforces edit_theme_options.
+            case 'wp_get_widgets':
+                if (!current_user_can('edit_theme_options')) {
+                    throw new \Exception('You do not have permission to read widgets.');
+                }
+                $widgets_request = new \WP_REST_Request('GET', '/wp/v2/widgets');
+                if (!empty($args['sidebar'])) {
+                    $widgets_request->set_param('sidebar', sanitize_key($args['sidebar']));
+                }
+                $widgets_response = rest_do_request($widgets_request);
+                if ($widgets_response->is_error()) {
+                    $err = $widgets_response->as_error();
+                    throw new \Exception('Failed to list widgets: ' . ($err ? $err->get_error_message() : 'unknown error'));
+                }
+                return rest_get_server()->response_to_data($widgets_response, false);
+
+            case 'wp_get_sidebars':
+                if (!current_user_can('edit_theme_options')) {
+                    throw new \Exception('You do not have permission to read sidebars.');
+                }
+                $sidebars_response = rest_do_request(new \WP_REST_Request('GET', '/wp/v2/sidebars'));
+                if ($sidebars_response->is_error()) {
+                    $err = $sidebars_response->as_error();
+                    throw new \Exception('Failed to list sidebars: ' . ($err ? $err->get_error_message() : 'unknown error'));
+                }
+                return rest_get_server()->response_to_data($sidebars_response, false);
+
+            case 'wp_update_widget':
+                if (!current_user_can('edit_theme_options')) {
+                    throw new \Exception('You do not have permission to update widgets.');
+                }
+                // Same master toggle as theme mods / custom CSS — widgets render
+                // site-wide (footer, sidebars), so writes are opt-in.
+                $rmcp_settings = get_option('royal_mcp_settings', []);
+                if (empty($rmcp_settings['allow_theme_writes'])) {
+                    throw new \Exception('Theme writes are disabled. Enable "Allow AI to modify theme appearance" under Royal MCP > Settings.');
+                }
+                $widget_id = sanitize_text_field($args['id'] ?? '');
+                if ($widget_id === '') throw new \Exception('id is required.');
+                if (!array_key_exists('instance', $args) && !array_key_exists('content', $args)) {
+                    throw new \Exception('Pass instance (classic widget field values) or content (block-widget raw HTML).');
+                }
+                $update_request = new \WP_REST_Request('PUT', '/wp/v2/widgets/' . $widget_id);
+                if (array_key_exists('instance', $args) && is_array($args['instance'])) {
+                    $update_request->set_param('instance', ['raw' => $args['instance']]);
+                }
+                if (array_key_exists('content', $args)) {
+                    $update_request->set_param('content', (string) $args['content']);
+                }
+                $update_response = rest_do_request($update_request);
+                if ($update_response->is_error()) {
+                    $err = $update_response->as_error();
+                    throw new \Exception('Failed to update widget: ' . ($err ? $err->get_error_message() : 'unknown error'));
+                }
+                return rest_get_server()->response_to_data($update_response, false);
 
             case 'wp_get_custom_css':
                 if (!current_user_can('read')) {

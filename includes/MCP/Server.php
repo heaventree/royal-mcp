@@ -681,6 +681,7 @@ class Server {
             // SEO Meta (auto-detects Yoast SEO or Rank Math)
             ['name' => 'wp_audit_seo_bulk', 'description' => 'Bulk on-page SEO scan across many posts/pages in one call — built for full-site sweeps (skills, agents) that would otherwise need one wp_get_seo_meta call per page. For each item returns: SEO title/description (+ char lengths), noindex, H1 count, word count, image count, images missing alt text, and whether it has a featured image. Auto-detects Yoast SEO, Rank Math, or SEOPress for the title/description/noindex fields (see wp_get_seo_meta). Paginated — call again with an incremented page to sweep the whole site.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_type' => ['type' => 'string', 'description' => 'Post type slug (default: post). Use wp_get_post_types to discover available types, or "page" for pages.'], 'status' => ['type' => 'string', 'description' => 'Post status filter (default: publish)'], 'per_page' => ['type' => 'integer', 'description' => 'Items per page (default 50, max 200)'], 'page' => ['type' => 'integer', 'description' => 'Page number, 1-indexed (default 1)']]]],
             ['name' => 'wp_get_seo_meta', 'description' => 'Get the SEO meta fields for a post (title, description, focus keyword, robots, OG/Twitter overrides, URL slug). Auto-detects Yoast SEO, Rank Math, or SEOPress — returns the active plugin\'s fields plus the post slug (which is a WordPress-native field, returned regardless of SEO plugin). SEOPress responses also include nofollow and canonical.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer']], 'required' => ['post_id']]],
+            ['name' => 'seo_audit_meta_tags', 'description' => 'Audit the actual RENDERED <head> HTML of a live post/page — not just the SEO plugin\'s stored DB fields (see wp_get_seo_meta for that). Fetches the real permalink output and checks: duplicate title/description tags (theme+plugin conflicts), title/description char lengths, canonical URL, viewport, robots, charset, and full Open Graph + Twitter Card tag sets. Catches issues wp_get_seo_meta cannot: a theme hard-coding its own <title>, a caching layer stripping tags, two plugins both injecting og:title, etc. Use after wp_audit_seo_bulk flags a page as suspicious, or as a final live-output check before calling a fix done.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer', 'description' => 'Post ID to resolve to its permalink and fetch']], 'required' => ['post_id']]],
             ['name' => 'wp_update_seo_meta', 'description' => 'Update SEO meta fields on a post. Auto-routes title/description/focus_keyword/noindex/og_* to Yoast, Rank Math, or SEOPress based on which is active. The slug field is a WordPress-native field and works regardless of SEO plugin (corresponds to the URL slug shown in Yoast\'s and Rank Math\'s UI editors). Requires edit_post capability on the target post.', 'inputSchema' => ['type' => 'object', 'properties' => ['post_id' => ['type' => 'integer'], 'title' => ['type' => 'string', 'description' => 'SEO title (replaces the meta title used in browser tabs and SERPs)'], 'description' => ['type' => 'string', 'description' => 'SEO meta description (used in SERPs)'], 'focus_keyword' => ['type' => 'string', 'description' => 'Primary focus keyword for SEO scoring'], 'noindex' => ['type' => 'boolean', 'description' => 'Tell search engines not to index this URL'], 'og_title' => ['type' => 'string', 'description' => 'Open Graph title (Facebook / Slack / LinkedIn previews)'], 'og_description' => ['type' => 'string', 'description' => 'Open Graph description'], 'slug' => ['type' => 'string', 'description' => 'URL slug (post_name). WordPress will sanitize and ensure uniqueness; the actually-saved value is returned in the response so the caller can confirm.']], 'required' => ['post_id']]],
 
             // Permalink Structure
@@ -3204,6 +3205,16 @@ class Server {
                     'note'    => 'No SEO plugin (Yoast SEO, Rank Math, or SEOPress) detected on this site. The slug field is still returned because it is a WordPress-native field.',
                 ];
 
+            case 'seo_audit_meta_tags':
+                $audit_meta_post_id = self::resolve_post_id_arg($args);
+                if ($audit_meta_post_id <= 0) throw new \Exception('post_id is required.');
+                $audit_meta_post = get_post($audit_meta_post_id);
+                if (!$audit_meta_post) throw new \Exception('Post not found: ' . esc_html((string) $audit_meta_post_id));
+                if (!current_user_can('read_post', $audit_meta_post_id)) {
+                    throw new \Exception('You do not have permission to audit this post.');
+                }
+                return $this->audit_meta_tags($audit_meta_post_id);
+
             case 'wp_update_seo_meta':
                 $post_id = self::resolve_post_id_arg($args);
                 if ($post_id <= 0) throw new \Exception('post_id (or id) is required.');
@@ -3525,6 +3536,102 @@ class Server {
             return 'seopress';
         }
         return 'none';
+    }
+
+    /**
+     * Fetch a post's live permalink and audit the actually-rendered <head>
+     * markup — catches theme/plugin/cache conflicts that a DB-field read
+     * (wp_get_seo_meta) cannot, e.g. duplicate title tags, a stale og:image
+     * left by a page-cache, or a canonical the theme overrides.
+     */
+    private function audit_meta_tags($post_id) {
+        $url = get_permalink($post_id);
+        if (!$url) {
+            throw new \Exception('Could not resolve a permalink for this post.');
+        }
+
+        $response = wp_remote_get($url, ['timeout' => 15, 'redirection' => 3]);
+        if (is_wp_error($response)) {
+            throw new \Exception('Failed to fetch the live page: ' . $response->get_error_message());
+        }
+        $status = wp_remote_retrieve_response_code($response);
+        $html   = wp_remote_retrieve_body($response);
+        if ($status < 200 || $status >= 300 || empty($html)) {
+            throw new \Exception('Live page fetch returned HTTP ' . $status . '.');
+        }
+
+        libxml_use_internal_errors(true);
+        $doc = new \DOMDocument();
+        $doc->loadHTML($html, LIBXML_NOWARNING | LIBXML_NOERROR);
+        libxml_clear_errors();
+
+        $titles = $doc->getElementsByTagName('title');
+        $title_texts = [];
+        foreach ($titles as $t) { $title_texts[] = trim($t->textContent); }
+
+        $meta_by_name = []; // name/property => [values]
+        $canonical = [];
+        foreach ($doc->getElementsByTagName('meta') as $meta) {
+            $key = $meta->getAttribute('name') ?: $meta->getAttribute('property');
+            if (!$key) continue;
+            $meta_by_name[$key][] = $meta->getAttribute('content');
+        }
+        foreach ($doc->getElementsByTagName('link') as $link) {
+            if (strtolower($link->getAttribute('rel')) === 'canonical') {
+                $canonical[] = $link->getAttribute('href');
+            }
+        }
+
+        $get_one = function ($key) use ($meta_by_name) {
+            return $meta_by_name[$key][0] ?? '';
+        };
+        $desc = $get_one('description');
+        $og = [];
+        $twitter = [];
+        foreach ($meta_by_name as $key => $values) {
+            if (strpos($key, 'og:') === 0) { $og[$key] = $values[0]; }
+            if (strpos($key, 'twitter:') === 0) { $twitter[$key] = $values[0]; }
+        }
+
+        $checks = [];
+        $checks[] = ['name' => 'title_present', 'status' => count($title_texts) > 0 ? 'pass' : 'fail', 'detail' => count($title_texts) ? $title_texts[0] : 'No <title> tag rendered'];
+        $checks[] = ['name' => 'title_duplicate', 'status' => count($title_texts) > 1 ? 'fail' : 'pass', 'detail' => count($title_texts) . ' <title> tag(s) found'];
+        if (!empty($title_texts[0])) {
+            $len = strlen($title_texts[0]);
+            $checks[] = ['name' => 'title_length', 'status' => ($len >= 30 && $len <= 60) ? 'pass' : 'warn', 'detail' => $len . ' characters'];
+        }
+        $checks[] = ['name' => 'description_present', 'status' => $desc !== '' ? 'pass' : 'fail', 'detail' => $desc !== '' ? ($desc) : 'No meta description rendered'];
+        if ($desc !== '') {
+            $len = strlen($desc);
+            $checks[] = ['name' => 'description_length', 'status' => ($len >= 120 && $len <= 160) ? 'pass' : 'warn', 'detail' => $len . ' characters'];
+        }
+        $checks[] = ['name' => 'description_duplicate', 'status' => count($meta_by_name['description'] ?? []) > 1 ? 'fail' : 'pass', 'detail' => count($meta_by_name['description'] ?? []) . ' description tag(s) found'];
+        $checks[] = ['name' => 'canonical_present', 'status' => count($canonical) > 0 ? 'pass' : 'warn', 'detail' => $canonical[0] ?? 'No canonical link tag rendered'];
+        $checks[] = ['name' => 'canonical_duplicate', 'status' => count($canonical) > 1 ? 'fail' : 'pass', 'detail' => count($canonical) . ' canonical link(s) found'];
+        $checks[] = ['name' => 'viewport_present', 'status' => $get_one('viewport') !== '' ? 'pass' : 'fail', 'detail' => $get_one('viewport') ?: 'No viewport meta tag rendered'];
+        $checks[] = ['name' => 'og_title', 'status' => !empty($og['og:title']) ? 'pass' : 'warn', 'detail' => $og['og:title'] ?? 'Missing'];
+        $checks[] = ['name' => 'og_description', 'status' => !empty($og['og:description']) ? 'pass' : 'warn', 'detail' => $og['og:description'] ?? 'Missing'];
+        $checks[] = ['name' => 'og_image', 'status' => !empty($og['og:image']) ? 'pass' : 'warn', 'detail' => $og['og:image'] ?? 'Missing'];
+        $checks[] = ['name' => 'twitter_card', 'status' => !empty($twitter['twitter:card']) ? 'pass' : 'warn', 'detail' => $twitter['twitter:card'] ?? 'Missing'];
+
+        $fail_count = count(array_filter($checks, fn($c) => $c['status'] === 'fail'));
+        $warn_count = count(array_filter($checks, fn($c) => $c['status'] === 'warn'));
+
+        return [
+            'post_id'       => $post_id,
+            'url'           => $url,
+            'http_status'   => (int) $status,
+            'fail_count'    => $fail_count,
+            'warn_count'    => $warn_count,
+            'checks'        => $checks,
+            'title'         => $title_texts[0] ?? '',
+            'title_count'   => count($title_texts),
+            'description'   => $desc,
+            'canonical'     => $canonical[0] ?? '',
+            'canonical_count' => count($canonical),
+            'open_graph'    => $og,
+            'twitter_card'  => $twitter,
+        ];
     }
 
     private function apply_featured_media($post_id, $media_id) {

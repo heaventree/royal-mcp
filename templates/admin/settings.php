@@ -255,6 +255,68 @@ $royal_mcp_rest_base = rest_url('royal-mcp/v1/');
             </div>
 
             <!-- ==========================================================
+                 Google Business Profile
+                 ========================================================== -->
+            <div class="postbox">
+                <div class="postbox-header">
+                    <h2><?php esc_html_e('Google Business Profile', 'royal-mcp'); ?></h2>
+                </div>
+                <div class="inside">
+                    <p class="description">
+                        <?php echo wp_kses(__('Connect a Google Cloud OAuth client to expose Business Profile tools (reviews, Q&amp;A, posts, performance, verification status) over MCP. Create a <strong>Web application</strong> OAuth client in the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> with a redirect URI of <code>%s</code>, then click Authorize below.', 'royal-mcp'), ['strong' => [], 'a' => ['href' => [], 'target' => [], 'rel' => []], 'code' => []]); ?>
+                    </p>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">
+                                <label for="gbp_client_id"><?php esc_html_e('Client ID', 'royal-mcp'); ?></label>
+                            </th>
+                            <td>
+                                <input type="text"
+                                       name="royal_mcp_settings[gbp_client_id]"
+                                       id="gbp_client_id"
+                                       value="<?php echo esc_attr($royal_mcp_settings['gbp_client_id'] ?? ''); ?>"
+                                       class="regular-text code"
+                                       placeholder="xxxxxxxxxxxx.apps.googleusercontent.com">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="gbp_client_secret"><?php esc_html_e('Client Secret', 'royal-mcp'); ?></label>
+                            </th>
+                            <td>
+                                <input type="password"
+                                       name="royal_mcp_settings[gbp_client_secret]"
+                                       id="gbp_client_secret"
+                                       value="<?php echo esc_attr($royal_mcp_settings['gbp_client_secret'] ?? ''); ?>"
+                                       class="regular-text code">
+                                <button type="button" class="button toggle-password">
+                                    <span class="dashicons dashicons-visibility"></span>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">
+                                <label for="gbp_refresh_token"><?php esc_html_e('Refresh Token', 'royal-mcp'); ?></label>
+                            </th>
+                            <td>
+                                <input type="password"
+                                       name="royal_mcp_settings[gbp_refresh_token]"
+                                       id="gbp_refresh_token"
+                                       value="<?php echo esc_attr($royal_mcp_settings['gbp_refresh_token'] ?? ''); ?>"
+                                       class="regular-text code">
+                                <button type="button" class="button toggle-password">
+                                    <span class="dashicons dashicons-visibility"></span>
+                                </button>
+                                <p class="description">
+                                    <?php esc_html_e('Obtained once via the OAuth consent screen (access_type=offline, prompt=consent). Royal MCP exchanges this for short-lived access tokens automatically.', 'royal-mcp'); ?>
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ==========================================================
                  MCP Client Setup Guides
                  ========================================================== -->
             <div class="postbox">

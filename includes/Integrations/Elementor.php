@@ -1279,13 +1279,13 @@ class Elementor {
 	 * Supports youtube, vimeo, dailymotion. Self-hosted / VideoPress raise.
 	 */
 	private static function route_video_url( $url ) {
-		if ( preg_match( '#(?:youtube\.com|youtu\.be)#i', $url ) ) {
+		if ( preg_match( '#(?:youtube\.com|youtu\.be)#i', $url ) !== 0 ) {
 			return [ 'video_type' => 'youtube', 'url_field' => 'youtube_url', 'url_value' => (string) $url ];
 		}
-		if ( preg_match( '#vimeo\.com#i', $url ) ) {
+		if ( preg_match( '#vimeo\.com#i', $url ) !== 0 ) {
 			return [ 'video_type' => 'vimeo', 'url_field' => 'vimeo_url', 'url_value' => (string) $url ];
 		}
-		if ( preg_match( '#dailymotion\.com#i', $url ) ) {
+		if ( preg_match( '#dailymotion\.com#i', $url ) !== 0 ) {
 			return [ 'video_type' => 'dailymotion', 'url_field' => 'dailymotion_url', 'url_value' => (string) $url ];
 		}
 		throw new \Exception( 'Curated video supports YouTube, Vimeo, and Dailymotion URLs. For self-hosted or VideoPress, use the raw path with explicit settings (video_type + matching url field).' );

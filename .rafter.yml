@@ -1,0 +1,71 @@
+# Rafter (rafter.so) suppressions.
+# Each entry below was traced input -> sink and judged a false positive.
+# Do not add a rule here without that trace; see notes per rule.
+
+suppressions:
+  - rule: R-40E40
+    reason: >
+      Flags `isset($x) && is_array($x)` as missing a "count check" for
+      "the array being the only argument" — that concern applies to
+      variadic-argument functions, not to a plain conditional guard before
+      iterating an array value. All 17 hits are the same
+      isset()+is_array() guard on a request/config field
+      (Settings_Page.php, Elementor.php, SEOPress.php, WooCommerce.php).
+      No function-argument-count issue exists at any of these sites.
+
+  - rule: R-B0873
+    reason: >
+      Flags `is_string($x)` checks for not also excluding the empty
+      string. At all 3 sites (Elementor.php:438, Server.php:551,
+      Server.php:1337) the value is fed into str_replace, wp_kses_post,
+      or hash() — all are correct, safe, and meaningful on an empty
+      string. None are auth/permission checks where an empty string
+      would be wrongly treated as "set".
+
+  - rule: R-A7480
+    reason: >
+      Flags bare `if (preg_match(...))` for not using `!== 0`. Bare
+      truthy checks on preg_match are correct in PHP: 1 is truthy, 0 is
+      falsy, and `false` (regex engine error) is also falsy, so the
+      loose check behaves identically to a strict one here. The known
+      real bug this rule is meant to catch is `== false` /
+      `== 0` loose-equality comparisons, which do not occur at
+      Elementor.php:1282/1285/1288. These also only route a video URL to
+      a label, not an auth decision.
+
+  - rule: R-E90DC
+    reason: >
+      Flags `current_user_can('read_post', ...)` as "should be
+      edit_post" wherever the string read_post appears, without checking
+      whether the tool is a read or write operation. All 3 sites
+      (Server.php:1462 wp_get_post, :1723 wp_get_page, :1849
+      wp_get_media_item) are single-item GET/read tools; read_post is
+      the correct, least-privilege capability for them. Using edit_post
+      here would be a regression (over-restrictive), not a fix.
+
+  - rule: R-AEC8A
+    reason: >
+      Rule text is about "LDAP bind parameters" — this codebase has no
+      LDAP integration. The actual sites (Server.php:3689 download body
+      length check, :3727 sideload byte/filename check) are plain
+      empty-string/empty-buffer validation before a media sideload;
+      empty() is exactly correct there (no legitimate empty filename or
+      empty file body).
+
+  - rule: R-469CF
+  - rule: R-09073
+    reason: >
+      Both flag the same assets/js/admin.js:221 `.html(...)` call for
+      XSS. The argument is a static, hard-coded template literal (empty
+      "No outbound AI providers configured" state) with no interpolated
+      user/server data. No untrusted input reaches this sink.
+
+  - rule: R-479A1
+    reason: >
+      Flags echo json_encode(...) for not calling a jQuery-style
+      `.text()` escaper — that's a client-side JS idiom, inapplicable to
+      a PHP REST handler. Server.php:3933 sets
+      Content-Type: application/json (browsers do not execute
+      application/json as HTML/script), and every value in the payload
+      is a hard-coded string or rest_url() output — no attacker-supplied
+      data is present.

@@ -248,6 +248,15 @@ class Settings_Page {
             $sanitized['oauth_client_secret'] = $settings['oauth_client_secret'] ?? '';
         }
 
+        // Sanitize Google Business Profile credentials.
+        foreach ( [ 'gbp_client_id', 'gbp_client_secret', 'gbp_refresh_token' ] as $gbp_field ) {
+            if ( isset( $input[ $gbp_field ] ) && '' !== $input[ $gbp_field ] ) {
+                $sanitized[ $gbp_field ] = sanitize_text_field( $input[ $gbp_field ] );
+            } else {
+                $sanitized[ $gbp_field ] = $settings[ $gbp_field ] ?? '';
+            }
+        }
+
         // Sanitize AI Platforms (new structure)
         $sanitized['platforms'] = [];
         if (isset($input['platforms']) && is_array($input['platforms'])) {

@@ -13,6 +13,7 @@ use Royal_MCP\Integrations\RoyalAIFirewall as RAIFIntegration;
 use Royal_MCP\Integrations\Elementor_Coexistence;
 use Royal_MCP\Integrations\Redirection as RedirectionIntegration;
 use Royal_MCP\Integrations\SEOPress as SEOPressIntegration;
+use Royal_MCP\Integrations\GoogleBusinessProfile as GBPIntegration;
 
 if (!defined('ABSPATH')) {
     exit;
@@ -720,6 +721,7 @@ class Server {
         $tools = array_merge( $tools, RAIFIntegration::get_tools() );
         $tools = array_merge( $tools, RedirectionIntegration::get_tools() );
         $tools = array_merge( $tools, SEOPressIntegration::get_tools() );
+        $tools = array_merge( $tools, GBPIntegration::get_tools() );
 
         // 1.4.37 Candidate 5 — when Elementor's own MCP module is present,
         // prefix our elementor_* tool descriptions with a routing hint so
@@ -3428,6 +3430,9 @@ class Server {
                 }
                 if ( strpos( $name, 'seopress_' ) === 0 ) {
                     return SEOPressIntegration::execute_tool( $name, $args );
+                }
+                if ( strpos( $name, 'gbp_' ) === 0 ) {
+                    return GBPIntegration::execute_tool( $name, $args );
                 }
                 throw new \Exception('Unknown tool: ' . esc_html($name));
         }

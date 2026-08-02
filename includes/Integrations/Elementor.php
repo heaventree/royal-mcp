@@ -18,8 +18,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *  - elementor_replace_text       — bulk text substitution across widget settings
  *  - elementor_replace_image      — image URL swap across image-bearing widgets
  *  - elementor_get_page_outline   — extract simplified structure for AI reasoning (<2KB)
+ *  - elementor_get_widget_settings — read one element's full settings object
+ *  - elementor_update_widget_setting — write a single setting on one element
  *  - elementor_list_local_templates — enumerate saved templates from the library
  *  - elementor_import_template    — create a new template from a JSON payload
+ *  - elementor_add_widget         — add a new widget/container to a page
  */
 class Elementor {
 
@@ -102,6 +105,20 @@ class Elementor {
 						'element_id' => [ 'type' => 'string',  'description' => 'The Elementor element ID (short hex string, e.g. "a1b2c3d"). Obtained from elementor_get_page_outline or via editing the element.' ],
 					],
 					'required'   => [ 'post_id', 'element_id' ],
+				],
+			],
+			[
+				'name'        => 'elementor_update_widget_setting',
+				'description' => 'Update a single setting on an existing Elementor element (widget, container, section, or column) by its ID — without touching any other setting. Use for things elementor_replace_text can\'t do: changing a heading\'s HTML tag (header_size: h1-h6), alignment, size, color, or any other field in the settings object returned by elementor_get_widget_settings. Look up the element_id and current settings with elementor_get_widget_settings first. Setting value=null deletes the key (reverts to the widget\'s default). Requires edit_post capability on the target post.',
+				'inputSchema' => [
+					'type'       => 'object',
+					'properties' => [
+						'post_id'    => [ 'type' => 'integer', 'description' => 'The Elementor page/post containing the element.' ],
+						'element_id' => [ 'type' => 'string',  'description' => 'The Elementor element ID (from elementor_get_page_outline or elementor_get_widget_settings).' ],
+						'setting'    => [ 'type' => 'string',  'description' => 'The settings key to change, e.g. "header_size", "title", "align". See elementor_get_widget_settings output for the current keys on this element.' ],
+						'value'      => [ 'description' => 'New value for the setting. Any JSON type matching what the field expects (string, number, boolean, object, or array — e.g. Elementor size controls use {"unit":"px","size":20}). Pass null to remove the key entirely.' ],
+					],
+					'required'   => [ 'post_id', 'element_id', 'setting' ],
 				],
 			],
 			[
@@ -196,6 +213,9 @@ class Elementor {
 
 			case 'elementor_get_widget_settings':
 				return self::get_widget_settings( $args );
+
+			case 'elementor_update_widget_setting':
+				return self::update_widget_setting( $args );
 
 			case 'elementor_list_local_templates':
 				return self::list_local_templates( $args );
@@ -653,6 +673,99 @@ class Elementor {
 			'child_count'  => count( $children ),
 			'settings'     => isset( $el['settings'] ) ? $el['settings'] : new \stdClass(),
 		];
+	}
+
+	/**
+	 * Update a single settings key on one element, in place.
+	 *
+	 * Complements elementor_replace_text (bulk text substitution) and
+	 * elementor_add_widget (new elements) with the missing single-field write
+	 * path — e.g. flipping a heading's header_size from h1 to h2 without
+	 * touching its text or any other setting.
+	 */
+	private static function update_widget_setting( $args ) {
+		$post_id    = (int) ( $args['post_id'] ?? 0 );
+		$element_id = isset( $args['element_id'] ) ? (string) $args['element_id'] : '';
+		$setting    = isset( $args['setting'] ) ? (string) $args['setting'] : '';
+
+		if ( $post_id <= 0 ) {
+			throw new \Exception( 'post_id is required.' );
+		}
+		if ( '' === $element_id ) {
+			throw new \Exception( 'element_id is required.' );
+		}
+		if ( '' === $setting ) {
+			throw new \Exception( 'setting is required.' );
+		}
+		if ( ! array_key_exists( 'value', $args ) ) {
+			throw new \Exception( 'value is required (pass null to remove the setting).' );
+		}
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			throw new \Exception( 'edit_post capability required on target post.' );
+		}
+
+		$elementor_data = get_post_meta( $post_id, '_elementor_data', true );
+		if ( empty( $elementor_data ) ) {
+			throw new \Exception( 'Target post does not have Elementor data.' );
+		}
+		$tree = is_string( $elementor_data ) ? json_decode( $elementor_data, true ) : $elementor_data;
+		if ( ! is_array( $tree ) ) {
+			throw new \Exception( 'Could not parse _elementor_data as a JSON array.' );
+		}
+
+		$previous = null;
+		$found_previous = false;
+		$updated = self::set_element_setting( $tree, $element_id, $setting, $args['value'], $previous, $found_previous );
+		if ( ! $updated ) {
+			throw new \Exception( 'element_id not found in this page: ' . esc_html( $element_id ) . '. Use elementor_get_page_outline or elementor_get_widget_settings to confirm the ID.' );
+		}
+
+		update_post_meta( $post_id, '_elementor_data', wp_slash( wp_json_encode( $tree ) ) );
+
+		return [
+			'success'         => true,
+			'post_id'         => $post_id,
+			'element_id'      => $element_id,
+			'setting'         => $setting,
+			'previous_value'  => $found_previous ? $previous : null,
+			'new_value'       => $args['value'],
+			'edit_url'        => admin_url( 'post.php?post=' . $post_id . '&action=elementor' ),
+			'note'            => 'If the page is open in the Elementor editor elsewhere, reload it there to see this change — the editor caches its own copy of the data.',
+		];
+	}
+
+	/**
+	 * DFS-mutate an Elementor element tree in place, setting (or deleting,
+	 * when $value is null) one key in the settings object of the element
+	 * matching $target_id. Returns true if the element was found and changed.
+	 * Captures the pre-change value into &$previous / &$found_previous for
+	 * the response's previous_value field.
+	 */
+	private static function set_element_setting( &$elements, $target_id, $setting_key, $value, &$previous, &$found_previous ) {
+		foreach ( $elements as &$el ) {
+			if ( ! is_array( $el ) ) {
+				continue;
+			}
+			if ( isset( $el['id'] ) && (string) $el['id'] === $target_id ) {
+				if ( ! isset( $el['settings'] ) || ! is_array( $el['settings'] ) ) {
+					$el['settings'] = [];
+				}
+				$found_previous = array_key_exists( $setting_key, $el['settings'] );
+				$previous = $found_previous ? $el['settings'][ $setting_key ] : null;
+				if ( null === $value ) {
+					unset( $el['settings'][ $setting_key ] );
+				} else {
+					$el['settings'][ $setting_key ] = $value;
+				}
+				return true;
+			}
+			if ( isset( $el['elements'] ) && is_array( $el['elements'] ) && count( $el['elements'] ) > 0 ) {
+				if ( self::set_element_setting( $el['elements'], $target_id, $setting_key, $value, $previous, $found_previous ) ) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	/**

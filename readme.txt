@@ -4,7 +4,7 @@ Donate link: https://www.royalplugins.com
 Tags: mcp, ai, claude, chatgpt, elementor
 Requires at least: 5.8
 Tested up to: 7.0
-Stable tag: 1.4.44
+Stable tag: 1.4.45
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -323,6 +323,9 @@ Every authenticated MCP request is logged to the Royal MCP activity log with tim
 6. OAuth consent screen for Claude Desktop connector
 
 == Changelog ==
+
+= 1.4.45 =
+* Feature: New elementor_update_widget_setting tool — write a single setting on an existing Elementor element by ID (e.g. flip a heading's header_size from h1 to h2, change alignment/color/size) without touching any other field. Complements elementor_replace_text (bulk text substitution, not settings) and elementor_get_widget_settings (read-only). Pass value=null to remove a key. Requires edit_post capability.
 
 = 1.4.44 =
 * Feature: Widget access — wp_get_widgets (list widget instances, optionally filtered by sidebar), wp_get_sidebars (list widget areas and which widgets live in each), and wp_update_widget (edit a widget's content — classic or block-based). Dispatched internally via WordPress core's own /wp/v2/widgets and /wp/v2/sidebars REST controllers, so both legacy and block widgets are handled uniformly. Reads require edit_theme_options; writes additionally require the "Allow AI to modify theme appearance" admin toggle (same gate as wp_update_theme_mod / wp_update_custom_css).
